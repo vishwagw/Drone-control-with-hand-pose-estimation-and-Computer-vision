@@ -1,0 +1,4 @@
+pywebview
+opencv-python
+mediapipe
+numpy
