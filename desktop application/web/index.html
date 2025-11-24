@@ -1,0 +1,123 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>HandPose Drone Simulator</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #111; color: #eee }
+    #top { padding: 12px; display:flex; gap:12px; align-items:center }
+    #canvas { background: #0b1220; display:block; margin: 10px auto; border-radius:8px }
+    .btn { padding:8px 12px; background:#1f6feb; color:white; border-radius:6px; cursor:pointer }
+    #status { margin-left:12px }
+  </style>
+</head>
+<body>
+  <div id="top">
+    <div class="btn" id="btnStart">Start</div>
+    <div class="btn" id="btnStop">Stop</div>
+    <div id="status">Command: <span id="cmd">idle</span></div>
+  </div>
+  <canvas id="canvas" width="800" height="540"></canvas>
+  <img id="preview" style="position:fixed; right:14px; top:70px; width:220px; height:150px; border-radius:6px; border:2px solid rgba(255,255,255,0.08); background:#000;" src="" alt="camera preview">
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const cmdEl = document.getElementById('cmd');
+
+    let running = true;
+
+    // Drone state
+    const drone = { x: 400, y: 270, z: 0, angle: 0, vx:0, vy:0, vz:0 };
+
+    function applyCommand(command){
+      cmdEl.textContent = command;
+      // simple mapping
+      switch(command){
+        case 'hover': drone.vx = 0; drone.vy = 0; drone.vz = 0; break;
+        case 'land': drone.vx = 0; drone.vy = 1.5; drone.vz = -2; break;
+        case 'forward': drone.vx = 0; drone.vy = -2; break;
+        case 'back': drone.vy = 2; break;
+        case 'left': drone.vx = -2; break;
+        case 'right': drone.vx = 2; break;
+        case 'ascend': drone.vz = 2; break;
+        case 'descend': drone.vz = -2; break;
+        case 'no_hand': // gently slow down
+          drone.vx *= 0.9; drone.vy *= 0.9; drone.vz *= 0.9; break;
+        default:
+          break;
+      }
+    }
+
+    // Called by Python: window.onCommand('forward')
+    window.onCommand = function(command){
+      applyCommand(command);
+    }
+
+    // Called by Python: window.onFrame(dataUrl)
+    window.onFrame = function(dataUrl){
+      try{
+        const img = document.getElementById('preview');
+        img.src = dataUrl;
+      }catch(e){
+        console.warn('onFrame failed', e);
+      }
+    }
+
+    document.getElementById('btnStart').addEventListener('click', ()=>{ running=true; });
+    document.getElementById('btnStop').addEventListener('click', ()=>{ running=false; });
+
+    function draw(){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      // background grid
+      ctx.fillStyle = '#071025';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+
+      // update physics
+      if(running){
+        drone.x += drone.vx;
+        drone.y += drone.vy;
+        drone.z += drone.vz * 0.5;
+        // damping
+        drone.vx *= 0.95; drone.vy *= 0.95; drone.vz *= 0.9;
+        // bounds
+        drone.x = Math.max(30, Math.min(canvas.width-30, drone.x));
+        drone.y = Math.max(30, Math.min(canvas.height-30, drone.y));
+        drone.z = Math.max(-20, Math.min(200, drone.z));
+      }
+
+      // draw shadow (z influences size)
+      const size = 30 + Math.max(0, drone.z)*0.06;
+      const shadowAlpha = 0.25;
+      ctx.fillStyle = `rgba(0,0,0,${shadowAlpha})`;
+      ctx.beginPath();
+      ctx.ellipse(drone.x, drone.y+size*0.6, size*1.3, size*0.5, 0, 0, Math.PI*2);
+      ctx.fill();
+
+      // draw drone body
+      ctx.save();
+      ctx.translate(drone.x, drone.y);
+      ctx.rotate(drone.angle);
+      ctx.fillStyle = '#88e0ff';
+      ctx.fillRect(-size, -size*0.4, size*2, size*0.8);
+      // rotors
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(-size*0.8, -size*0.5, size*0.25, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(size*0.8, -size*0.5, size*0.25, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(-size*0.8, size*0.5, size*0.25, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(size*0.8, size*0.5, size*0.25, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+
+      // display telemetry
+      ctx.fillStyle = '#cfe';
+      ctx.font = '14px Arial';
+      ctx.fillText(`x:${drone.x.toFixed(0)} y:${drone.y.toFixed(0)} z:${drone.z.toFixed(1)}`, 12, 20);
+      ctx.fillText(`cmd: ${cmdEl.textContent}`, 12, 40);
+
+      requestAnimationFrame(draw);
+    }
+
+    requestAnimationFrame(draw);
+  </script>
+</body>
+</html>
